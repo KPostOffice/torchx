@@ -217,7 +217,15 @@ def ddp(
     # nproc_per_node: number of processes on each node
     min_nnodes, max_nnodes, nproc_per_node, nnodes_rep = parse_nnodes(j)
 
-  
+    if script:
+        # script name/module no extension
+        role_name = Path(script).stem
+    elif m:
+        role_name = m.rpartition(".")[2]
+    else:
+        raise ValueError("failed to compute role_name")
+
+    rdzv_backend = "static"
     if max_nnodes == 1:
         # using port 0 makes elastic chose a free random port which is ok
         # for single-node jobs since all workers run under a single agent
@@ -239,6 +247,9 @@ def ddp(
 
     if env is None:
         env = {}
+
+    env.setdefault("LOGLEVEL", os.getenv("LOGLEVEL", "DEBUG"))
+    env.setdefault("TORCH_DISTRIBUTED_DEBUG", "DETAIL")
 
     argname = StructuredNameArgument.parse_from(
         name=name,
