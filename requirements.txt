@@ -3,6 +3,7 @@ docstring-parser==0.8.1
 importlib-metadata
 pyyaml
 docker
+podman
 filelock
 fsspec
 # To resolve confliciting dependencies for urllib3: https://github.com/pytorch/torchx/actions/runs/3484190429/jobs/5828784263#step:4:552

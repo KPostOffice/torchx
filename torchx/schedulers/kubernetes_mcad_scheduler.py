@@ -78,6 +78,7 @@ from typing_extensions import TypedDict
 
 if TYPE_CHECKING:
     from docker import DockerClient
+    from podman import PodmanClient
     from kubernetes.client import ApiClient, CustomObjectsApi
     from kubernetes.client.models import (  # noqa: F401 imported but unused
         V1Container,
@@ -814,8 +815,9 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
         session_name: str,
         client: Optional["ApiClient"] = None,
         docker_client: Optional["DockerClient"] = None,
+        podman_client:  Optional["PodmanClient"] = None,
     ) -> None:
-        super().__init__("kubernetes_mcad", session_name, docker_client=docker_client)
+        super().__init__("kubernetes_mcad", session_name, docker_client=docker_client, podman_client=podman_client)
 
         self._client = client
 

@@ -149,7 +149,7 @@ class DockerScheduler(DockerWorkspaceMixin, Scheduler[DockerOpts]):
         import filelock
         from docker.errors import APIError
 
-        client = self._docker_client
+        client = self._container_client
         lock_path = os.path.join(tempfile.gettempdir(), "torchx_docker_network_lock")
 
         # Docker networks.create check_duplicate has a race condition so we need
@@ -164,7 +164,7 @@ class DockerScheduler(DockerWorkspaceMixin, Scheduler[DockerOpts]):
                     raise
 
     def schedule(self, dryrun_info: AppDryRunInfo[DockerJob]) -> str:
-        client = self._docker_client
+        client = self._container_client
 
         req = dryrun_info.request
 
@@ -309,7 +309,7 @@ class DockerScheduler(DockerWorkspaceMixin, Scheduler[DockerOpts]):
         pass
 
     def _get_container(self, app_id: str, role: str, replica_id: int) -> "Container":
-        client = self._docker_client
+        client = self._container_client
         containers = client.containers.list(
             all=True,
             filters={
@@ -331,7 +331,7 @@ class DockerScheduler(DockerWorkspaceMixin, Scheduler[DockerOpts]):
         return containers[0]
 
     def _get_containers(self, app_id: str) -> List["Container"]:
-        client = self._docker_client
+        client = self._container_client
         return client.containers.list(
             all=True, filters={"label": f"{LABEL_APP_ID}={app_id}"}
         )
@@ -453,7 +453,7 @@ class DockerScheduler(DockerWorkspaceMixin, Scheduler[DockerOpts]):
             ListAppResponse(
                 app_id=cntr.labels[LABEL_APP_ID], state=self._get_app_state(cntr)
             )
-            for cntr in self._docker_client.containers.list(
+            for cntr in self._container_client.containers.list(
                 all=True, filters={"label": f"{LABEL_APP_ID}"}
             )
         }

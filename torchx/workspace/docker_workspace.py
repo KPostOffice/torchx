@@ -11,7 +11,7 @@ import stat
 import sys
 import tarfile
 import tempfile
-from typing import Dict, IO, Iterable, Mapping, Optional, TextIO, Tuple, TYPE_CHECKING
+from typing import Dict, IO, Iterable, Mapping, Optional, TextIO, Tuple, Union, TYPE_CHECKING
 
 import fsspec
 
@@ -21,9 +21,12 @@ from torchx.workspace.api import walk_workspace, WorkspaceMixin
 
 if TYPE_CHECKING:
     from docker import DockerClient
+    from podman import PodmanClient
+    from podman.errors.exceptions import APIError
 
 log: logging.Logger = logging.getLogger(__name__)
 
+ContainerClient = Union["DockerClient", "PodmanClient"]
 
 TORCHX_DOCKERFILE = "Dockerfile.torchx"
 
@@ -34,6 +37,22 @@ FROM $IMAGE
 COPY . .
 """
 
+def has_docker() -> bool:
+    try:
+        import docker
+
+        docker.from_env()
+        return True
+    except (ImportError, docker.errors.DockerException):
+        return False
+
+def has_podman() -> bool:
+    try:
+        import podman
+
+        return podman.PodmanClient().ping
+    except (ImportError, APIError):
+        return False
 
 class DockerWorkspaceMixin(WorkspaceMixin[Dict[str, Tuple[str, str]]]):
     """
@@ -69,19 +88,27 @@ class DockerWorkspaceMixin(WorkspaceMixin[Dict[str, Tuple[str, str]]]):
         self,
         *args: object,
         docker_client: Optional["DockerClient"] = None,
+        podman_client: Optional["PodmanClient"] = None,
         **kwargs: object,
     ) -> None:
         super().__init__(*args, **kwargs)
-        self.__docker_client = docker_client
+        if bool(docker_client) and bool(podman_client):
+            raise ValueError("Only docker_client OR podman_client can be set.")
+        self.__container_client = docker_client
 
     @property
-    def _docker_client(self) -> "DockerClient":
-        client = self.__docker_client
-        if client is None:
+    def _container_client(self) -> "ContainerClient":
+        client = self.__container_client
+        if client is None and has_docker():
             import docker
 
             client = docker.from_env()
-            self.__docker_client = client
+            self.__container_client = client
+        elif client is None and has_podman():
+            import podman
+
+            client = podman.PodmanClient()
+            self.__container_client = client
         return client
 
     def workspace_opts(self) -> runopts:
@@ -109,13 +136,13 @@ class DockerWorkspaceMixin(WorkspaceMixin[Dict[str, Tuple[str, str]]]):
 
         try:
             try:
-                self._docker_client.images.pull(role.image)
+                self._container_client.images.pull(role.image)
             except Exception as e:
                 log.warning(
                     f"failed to pull image {role.image}, falling back to local: {e}"
                 )
             log.info("Building workspace docker image (this may take a while)...")
-            image, _ = self._docker_client.images.build(
+            image, _ = self._container_client.images.build(
                 fileobj=context,
                 custom_context=True,
                 dockerfile=TORCHX_DOCKERFILE,
@@ -181,7 +208,7 @@ class DockerWorkspaceMixin(WorkspaceMixin[Dict[str, Tuple[str, str]]]):
         if len(images_to_push) == 0:
             return
 
-        client = self._docker_client
+        client = self._container_client
         for local, (repo, tag) in images_to_push.items():
             log.info(f"pushing image {repo}:{tag}...")
             img = client.images.get(local)
