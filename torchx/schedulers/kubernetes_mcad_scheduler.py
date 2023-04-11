@@ -74,6 +74,7 @@ from torchx.specs.api import (
 )
 
 from torchx.workspace.docker_workspace import DockerWorkspaceMixin
+from torchx.workspace.openshift_workspace import OpenShiftWorkspaceMixin
 from typing_extensions import TypedDict
 
 if TYPE_CHECKING:
@@ -750,7 +751,7 @@ class KubernetesMCADOpts(TypedDict, total=False):
     network: Optional[str]
 
 
-class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts]):
+class KubernetesMCADScheduler(OpenShiftWorkspaceMixin, Scheduler[KubernetesMCADOpts]):
     """
     KubernetesMCADScheduler is a TorchX scheduling interface to Kubernetes.
 
@@ -851,9 +852,9 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
         self,
         session_name: str,
         client: Optional["ApiClient"] = None,
-        docker_client: Optional["DockerClient"] = None,
+        # docker_client: Optional["DockerClient"] = None,
     ) -> None:
-        super().__init__("kubernetes_mcad", session_name, docker_client=docker_client)
+        super().__init__("kubernetes_mcad", session_name)
 
         self._client = client
 
