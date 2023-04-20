@@ -331,7 +331,7 @@ def role_to_pod(
     )
 
     # Get correct formatting for image secret
-    imagesecret = V1LocalObjectReference(name=image_secret)
+    # imagesecret = V1LocalObjectReference(name=image_secret)
     metadata = V1ObjectMeta(
         name=name,
         annotations={
@@ -352,7 +352,7 @@ def role_to_pod(
             containers=[container],
             hostname=name,
             subdomain=unique_app_id,
-            image_pull_secrets=[imagesecret],
+            # image_pull_secrets=[imagesecret],
             restart_policy="Never",
             service_account_name=service_account,
             volumes=volumes,
@@ -854,7 +854,7 @@ class KubernetesMCADScheduler(OpenShiftWorkspaceMixin, Scheduler[KubernetesMCADO
         client: Optional["ApiClient"] = None,
         # docker_client: Optional["DockerClient"] = None,
     ) -> None:
-        super().__init__("kubernetes_mcad", session_name)
+        super().__init__("kubernetes_mcad", session_name) #, docker_client=docker_client)
 
         self._client = client
 

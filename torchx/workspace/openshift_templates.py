@@ -11,12 +11,17 @@ DOCKER_OUTPUT = """
 
 IMAGE_STREAM_OUTPUT = """
       kind: 'ImageStreamTag'
-      name: '{image_repo}:{sha}"'
+      name: '{image_repo}:{sha}'
 """
 
 PULL_SECRET = """
     pullSecret:
       name: {pull_secret_name}
+"""
+
+BUILD_ARGS = """
+        - name: IMAGE
+          value: {image}
 """
 
 BUILD_CONFIG_TEMPLATE = """
@@ -34,7 +39,8 @@ spec:
   strategy:
     type: Docker
     dockerStrategy:
-      forcePull: true
+      buildArgs:
+{build_args}
 {image_secret}
   source:
     type: Binary

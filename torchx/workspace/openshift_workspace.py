@@ -14,6 +14,7 @@ import tempfile
 from typing import Dict, IO, Iterable, Mapping, Optional, TextIO, Tuple, TYPE_CHECKING
 import hashlib
 import yaml
+import subprocess
 
 import fsspec
 
@@ -36,7 +37,7 @@ if TYPE_CHECKING:
 log: logging.Logger = logging.getLogger(__name__)
 
 
-TORCHX_DOCKERFILE = "Dockerfile.torchx"
+TORCHX_DOCKERFILE = "Dockerfile"
 
 DEFAULT_DOCKERFILE = b"""
 ARG IMAGE
@@ -105,11 +106,12 @@ class OpenShiftWorkspaceMixin(WorkspaceMixin[Dict[str, Tuple[str, str]]]):
         """
 
         context = _build_context(role.image, workspace)
-        role.image = context
+        role._base_image = role.image
+        role.image = context.name
 
     def dryrun_push_images(
         self, app: AppDef, cfg: Mapping[str, CfgVal]
-    ) -> Dict[IO[bytes], Tuple[str, str, str]]:
+    ) -> Dict[str, Tuple[str, str, str]]:
         """
         _update_app_images replaces the local Docker images (identified via
         ``sha256:...``) in the provided ``AppDef`` with the remote path that they will be uploaded to and
@@ -125,7 +127,7 @@ class OpenShiftWorkspaceMixin(WorkspaceMixin[Dict[str, Tuple[str, str]]]):
 
         images_to_push = {}
         for role in app.roles:
-            if isinstance(role.image, IO[bytes]):
+            if isinstance(role.image, str):
                 if not image_repo:
                     raise KeyError(
                         f"must specify the image repository via `image_repo` config to be able to upload local image {role.image}"
@@ -134,7 +136,8 @@ class OpenShiftWorkspaceMixin(WorkspaceMixin[Dict[str, Tuple[str, str]]]):
 
                 # generate build config
 
-                archive_hash = _get_md5_checksum(role.image)
+                with open(role.image, "rb") as archive:
+                    archive_hash = _get_md5_checksum(archive)
                 output = openshift_templates.IMAGE_STREAM_OUTPUT.format(
                     image_repo=image_repo, sha=archive_hash
                 )
@@ -147,6 +150,8 @@ class OpenShiftWorkspaceMixin(WorkspaceMixin[Dict[str, Tuple[str, str]]]):
 
                 namespace = cfg.get("namespace", oc.get_project_name())
 
+                build_args = openshift_templates.BUILD_ARGS.format(image=role._base_image)  # TODO check what role.base_image contains
+
                 build_config = openshift_templates.BUILD_CONFIG_TEMPLATE.format(
                     image_repo=image_repo,
                     sha=archive_hash,
@@ -154,12 +159,14 @@ class OpenShiftWorkspaceMixin(WorkspaceMixin[Dict[str, Tuple[str, str]]]):
                     version=torchx.version.__version__,
                     output=output,
                     image_secret=image_secret,
+                    build_args=build_args,  # TODO construct build args
                 )
-                remote_image = image_repo + ":" + archive_hash
-                images_to_push[role.image] = (
+                remote_image = f"image-registry.openshift-image-registry.svc:5000/{namespace}/{image_repo}:{archive_hash}"
+                images_to_push[remote_image] = (
                     image_repo,
                     archive_hash,
                     build_config,
+                    role.image,
                 )
                 role.image = remote_image
         return images_to_push
@@ -177,17 +184,19 @@ class OpenShiftWorkspaceMixin(WorkspaceMixin[Dict[str, Tuple[str, str]]]):
         if len(images_to_push) == 0:
             return
 
-        for file, (repo, tag, build_config) in images_to_push.items():
-            log.info(f"pushing image {repo}:{tag}...")
-            build_config_dict = yaml.safe_load(build_config)
-            namespace = build_config_dict["metadata"]["namespace"]
-            oc.apply(build_config_dict)
-            oc.start_build(
-                f"{build_config_dict['metadata']['name']}",
-                f"-n {namespace}",
-                f"--from-archive={file.name}",
-            )
-            file.close()
+        for _, (repo, tag, build_config, file_name) in images_to_push.items():
+            with open(file_name, "rb") as file:
+                log.info(f"pushing image {repo}:{tag}...")
+                build_config_dict = yaml.safe_load(build_config)
+                namespace = build_config_dict["metadata"]["namespace"]
+                oc.apply(build_config_dict)
+                subprocess.run(f"oc start-build -n {namespace} {build_config_dict['metadata']['name']} --from-archive={file_name} --follow", shell=True)
+                # oc.start_build(
+                #     [
+                #         f"-n {namespace}",
+                #         f"{build_config_dict['metadata']['name']}",
+                #         f"--from-archive={file.name}"],
+                # )
 
 
 def _build_context(img: str, workspace: str) -> IO[bytes]:
@@ -195,6 +204,7 @@ def _build_context(img: str, workspace: str) -> IO[bytes]:
     f = tempfile.NamedTemporaryFile(  # noqa P201
         prefix="torchx-context",
         suffix=".tar",
+        delete=False,
     )
 
     with tarfile.open(fileobj=f, mode="w") as tf:
